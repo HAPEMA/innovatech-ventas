@@ -1,38 +1,58 @@
-name: Add CI/CD workflow for ventas deployment
+name: CI/CD Backend Ventas → ECS
 
 on:
   push:
-    branches: [ deploy ]
+    branches: [deploy]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: innovatech_ventas
+  ECS_CLUSTER: innovatech_cluster
+  ECS_SERVICE: innovatech-ventas-service
+  CONTAINER_NAME: innovatech-ventas
 
 jobs:
-  build-and-deploy:
+  deploy:
+    name: Build → Push ECR → Deploy ECS
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout código
+        uses: actions/checkout@v4
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: hapema/innovatech-ventas:latest
+      - name: Login a Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Deploy to EC2 Backend via jump host
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Build y Push imagen a ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker build -t $IMAGE .
+          docker push $IMAGE
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Actualizar imagen en Task Definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          host: ${{ secrets.EC2_FRONTEND_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            ssh -i ~/.ssh/innovatech-key.pem -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_BACKEND_HOST }} "
-              cd ~/innovatech-ventas &&
-              docker-compose --env-file ~/.env.ventas pull &&
-              docker-compose --env-file ~/.env.ventas up -d
-            "
+          task-definition: ecs/task-def-ventas.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy en ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

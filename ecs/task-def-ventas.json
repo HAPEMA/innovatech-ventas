@@ -1,0 +1,83 @@
+{
+  "family": "innovatech-ventas",
+  "taskRoleArn": "arn:aws:iam::881196376889:role/LabRole",
+  "executionRoleArn": "arn:aws:iam::881196376889:role/LabRole",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "volumes": [],
+  "containerDefinitions": [
+    {
+      "name": "mysql-ventas",
+      "image": "mysql:8.0",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 3306,
+          "hostPort": 3306,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": false,
+      "environment": [
+        { "name": "MYSQL_DATABASE",      "value": "ventas_db"   },
+        { "name": "MYSQL_PASSWORD",      "value": "Ventas#2025" },
+        { "name": "MYSQL_ROOT_PASSWORD", "value": "root1234"    },
+        { "name": "MYSQL_USER",          "value": "ventas_user" }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "mysqladmin ping -h localhost -u root --password=root1234 || exit 1"],
+        "interval": 10,
+        "timeout": 5,
+        "retries": 5,
+        "startPeriod": 30
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/innovatech_ventas",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "mysql"
+        }
+      },
+      "systemControls": []
+    },
+    {
+      "name": "innovatech-ventas",
+      "image": "881196376889.dkr.ecr.us-east-1.amazonaws.com/innovatech_ventas:latest",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8082,
+          "hostPort": 8082,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        { "name": "SERVER_PORT",                    "value": "8082"        },
+        { "name": "SPRING_DATASOURCE_USERNAME",     "value": "ventas_user" },
+        { "name": "SPRING_DATASOURCE_URL",          "value": "jdbc:mysql://127.0.0.1:3306/ventas_db?allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true" },
+        { "name": "SPRING_DATASOURCE_PASSWORD",     "value": "Ventas#2025" },
+        { "name": "SPRING_JPA_HIBERNATE_DDL_AUTO",  "value": "update"      }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "dependsOn": [
+        { "containerName": "mysql-ventas", "condition": "HEALTHY" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/innovatech_ventas",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "springboot"
+        }
+      },
+      "systemControls": []
+    }
+  ]
+}
